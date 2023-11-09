@@ -29,8 +29,8 @@ def c_func(t):
 
 if __name__ == "__main__":
     # init video feeds
-    vid1 = cv2.VideoCapture("seq 20 vid 1.mp4")
-    vid2 = cv2.VideoCapture("seq 20 vid 2.mp4")
+    vid1 = cv2.VideoCapture("videos/seq 20 vid 1.mp4")
+    vid2 = cv2.VideoCapture("videos/seq 20 vid 2.mp4")
 
     # qol parameters
     initial_frame_offset = 60

@@ -34,7 +34,10 @@ if __name__ == "__main__":
     frame1 = cv2.cvtColor(frame1, cv2.COLOR_RGB2GRAY)
     frame2 = cv2.cvtColor(frame2, cv2.COLOR_RGB2GRAY)
 
-    stereo = cv2.StereoBM_create(numDisparities=64, blockSize=15)
+    stereo = cv2.StereoBM_create(numDisparities=128, blockSize=21)
+    stereo.setMinDisparity(4)
+    stereo.setSpeckleRange(16)
+    stereo.setSpeckleWindowSize(45)
     stereo.setTextureThreshold(1000)
     disparity = stereo.compute(frame1, frame2)
 

@@ -8,7 +8,7 @@ if __name__ == "__main__":
     vid2 = cv2.VideoCapture("videos/seq 20 vid 2.mp4")
 
     # qol parameters
-    initial_frame_offset = 70
+    initial_frame_offset = 60
     # feed matching parameters
     resized = (400, 800)
     frame_diff = 12  # 8; 12
@@ -38,12 +38,10 @@ if __name__ == "__main__":
         stereo.setSpeckleWindowSize(45)
         stereo.setTextureThreshold(100)
         disparity1 = stereo.compute(frame1, frame2)
-        # disparity2 = stereo.compute(frame2, frame1)
 
         cv2.imshow("frame1", frame1)
         cv2.imshow("frame2", frame2)
         cv2.imshow("disparity1", disparity1*256)
-        # cv2.imshow("disparity2", -disparity2*256)
 
         if cv2.waitKey(250) & 0xFF == ord('q'):
             break

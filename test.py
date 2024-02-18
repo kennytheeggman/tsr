@@ -27,7 +27,7 @@ def sharpen(frames, meta):
 # identify features to track
 def features(frames, meta):
     feature_config = {
-        "maxCorners": 30, 
+        "maxCorners": 50, 
         "qualityLevel": 0.01, 
         "minDistance": 15
     }
@@ -58,7 +58,7 @@ def subtract(frames, meta):
 # optical flow calculation
 def optical_flow(frames, meta):
     pyrlk_config = {
-        "winSize": (150, 150),
+        "winSize": (250, 250),
         "maxLevel": 2,
         "nextPts": None
     }
@@ -71,7 +71,8 @@ def optical_flow(frames, meta):
             "prevPts": frame_meta["corners"].astype(np.float32),
         }
         pts, status, err = cv2.calcOpticalFlowPyrLK(**pyrlk_config)
-        meta[idx]["displacements"] = pts.astype(int) - frame_meta["corners"].astype(int)
+        meta[idx]["displacements"] = (pts.astype(int) - frame_meta["corners"].astype(int))
+        meta[idx]["status"] = status
 
     return frames, meta
 
@@ -102,12 +103,12 @@ def draw_of(frames, meta):
         arrowed_line_config |= { "img": frame }
         if "displacements" not in frame_meta.keys():
             break
-        for corner, displacement in zip(frame_meta["corners"], frame_meta["displacements"]):
-            if frame_meta["copy"][1][corner[1], corner[0]] > 127:
+        for c, d, status in zip(frame_meta["corners"], frame_meta["displacements"], frame_meta["status"]):
+            if status == 0:
                 break
             arrowed_line_config |= {
-                "pt1": corner,
-                "pt2": corner + displacement
+                "pt1": c,
+                "pt2": c + d
             }
             cv2.arrowedLine(**arrowed_line_config)
 

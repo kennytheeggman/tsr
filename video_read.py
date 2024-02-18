@@ -3,17 +3,17 @@ import cv2
 
 def every_frame(videos, funcs):
     vids = []
+    tsmeta = []
     for video in videos:
         vids.append(cv2.VideoCapture(video))
+        tsmeta.append({})
     while all_opened(vids):
         frames = []
-        tsmeta = []
         for vid in vids:
             r, f = vid.read()
             if not r:
                 return
             frames.append(f)
-            tsmeta.append({})
         for func in funcs:
             frames, tsmeta = func(frames, tsmeta)
         cv2.waitKey(1)

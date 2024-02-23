@@ -16,7 +16,9 @@ def every_frame(videos, funcs):
             frames.append(f)
         for func in funcs:
             frames, tsmeta = func(frames, tsmeta)
-        cv2.waitKey(1)
+        key = cv2.waitKey(1)
+        if key == ord("q"):
+            break
 
 def all_opened(vids):
     for vid in vids:

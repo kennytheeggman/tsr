@@ -2,6 +2,7 @@ from video_read import every_frame
 import cv2
 import numpy as np
 from copy import deepcopy as dc
+from optical_flow import optical_flow_1
 
 
 #################################### Image Processing Pipeline ####################################  
@@ -27,7 +28,7 @@ def sharpen(frames, meta):
 # identify features to track
 def features(frames, meta):
     feature_config = {
-        "maxCorners": 50, 
+        "maxCorners": 30, 
         "qualityLevel": 0.01, 
         "minDistance": 15
     }
@@ -57,23 +58,13 @@ def subtract(frames, meta):
 
 # optical flow calculation
 def optical_flow(frames, meta):
-    pyrlk_config = {
-        "winSize": (250, 250),
-        "maxLevel": 2,
-        "nextPts": None
-    }
     for idx, (frame, frame_meta) in enumerate(zip(frames, meta)):
         if "old frame" not in frame_meta.keys() or len(frame_meta["old frame"])<2:
             break
-        pyrlk_config |= {
-            "prevImg": frame_meta["old frame"][1],
-            "nextImg": frame_meta["copy"][1],
-            "prevPts": frame_meta["corners"].astype(np.float32),
-        }
-        pts, status, err = cv2.calcOpticalFlowPyrLK(**pyrlk_config)
-        meta[idx]["displacements"] = (pts.astype(int) - frame_meta["corners"].astype(int))
-        meta[idx]["status"] = status
-
+        last_frame = frame_meta["old frame"][1]
+        next_frame = frame_meta["copy"][1]
+        meta[idx]["displacements"], meta[idx]["status"] = optical_flow_1(last_frame, next_frame, [frame_meta["corners"].astype(np.float32)], 0.8)
+    
     return frames, meta
 
 # draw points on features
@@ -104,7 +95,7 @@ def draw_of(frames, meta):
         if "displacements" not in frame_meta.keys():
             break
         for c, d, status in zip(frame_meta["corners"], frame_meta["displacements"], frame_meta["status"]):
-            if status == 0:
+            if status[0] == 0:
                 break
             arrowed_line_config |= {
                 "pt1": c,

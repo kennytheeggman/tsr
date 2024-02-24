@@ -5,8 +5,9 @@ def every_frame(videos, funcs):
     vids = []
     tsmeta = []
     for video in videos:
-        vids.append(cv2.VideoCapture(video))
-        tsmeta.append({})
+        cap = cv2.VideoCapture(video)
+        vids.append(cap)
+        tsmeta.append({"capture": cap})
     while all_opened(vids):
         frames = []
         for vid in vids:

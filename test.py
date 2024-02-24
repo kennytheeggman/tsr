@@ -33,9 +33,12 @@ def features(frames, meta):
         "minDistance": 15
     }
     for idx, frame in enumerate(frames):
+        current_frame = meta[idx]["capture"].get(cv2.CAP_PROP_POS_FRAMES)
         # find corners
         feature_config |= { "image": frame }
-        corners = cv2.goodFeaturesToTrack(**feature_config)
+        corners = cv2.goodFeaturesToTrack(**feature_config) 
+        if "corners" in meta[idx].keys() and current_frame%8!=0 and len(meta[idx]["corners"])>len(corners):
+            return frames, meta
         # add corner info to metadata
         meta[idx]["corners"] = corners[:,0,:].astype(int)
     
@@ -63,7 +66,7 @@ def optical_flow(frames, meta):
             break
         last_frame = frame_meta["old frame"][1]
         next_frame = frame_meta["copy"][1]
-        meta[idx]["displacements"], meta[idx]["status"] = optical_flow_1(last_frame, next_frame, [frame_meta["corners"].astype(np.float32)], 0.8)
+        meta[idx]["displacements"], meta[idx]["status"] = optical_flow_1(last_frame, next_frame, [frame_meta["corners"].astype(np.float32)], 0.25)
     
     return frames, meta
 
@@ -109,6 +112,8 @@ def draw_of(frames, meta):
 def store_copy(frames, meta):
     for idx, (frame, frame_meta) in enumerate(zip(frames, meta)):
         meta[idx]["old frame"] = frame_meta["copy"]
+        if "displacements" in meta[idx].keys():
+            meta[idx]["corners"] += meta[idx]["displacements"]
 
     return frames, meta
 

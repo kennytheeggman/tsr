@@ -3,6 +3,10 @@ import numpy as np
 from copy import deepcopy as dc
 
 
+def of(last_frame, next_frame, point):
+    return
+
+
 def optical_flow_1(last_frame, next_frame, grouped_points, scale, max_accel=20, centers=None):
 
     last_frame = cv2.resize(last_frame, None, fx=scale, fy=scale)

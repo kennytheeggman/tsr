@@ -20,6 +20,14 @@ def every_frame(videos, funcs):
         key = cv2.waitKey(1)
         if key == ord("q"):
             break
+        if key == ord(" "):
+            key = cv2.waitKey(-1)
+            if key == ord("q"):
+                break
+            if key == ord(" "):
+                continue
+            else:
+                pass
 
 def all_opened(vids):
     for vid in vids:

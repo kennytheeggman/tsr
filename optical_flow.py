@@ -13,7 +13,7 @@ def optical_flow_1(last_frame, next_frame, grouped_points, scale, max_accel=20, 
     next_frame = cv2.resize(next_frame, None, fx=scale, fy=scale)
 
     pyrlk_config = {
-        "winSize": (200, 350),
+        "winSize": (int(300*scale)+1, int(600*scale)+1),
         "maxLevel": 2,
         "nextPts": None
     }

@@ -44,6 +44,7 @@ def features(frames, meta):
         "minDistance": 15
     }
     for idx, (frame, frame_meta) in enumerate(zip(frames, meta)):
+        frame[frame < 20] = 0
         current_frame = meta[idx]["capture"].get(cv2.CAP_PROP_POS_FRAMES)
         # find corners
         feature_config |= { "image": frame }
@@ -89,7 +90,13 @@ def contour(frames, meta):
         frame = frame.astype(np.uint8)
         ret, thresh = cv2.threshold(frame, 20, 255, 0)
         contours, hier, = cv2.findContours(thresh, cv2.RETR_LIST, cv2.CHAIN_APPROX_NONE)
-        meta[idx]["contours"] = contours
+        new_contours = []
+        for contour in contours:
+            area = cv2.contourArea(contour)
+            if area > 100:
+                new_contours.append(contour)
+
+        meta[idx]["contours"] = new_contours
         frames[idx] = frame
     return frames, meta
 
@@ -112,6 +119,7 @@ def optical_flow(frames, meta):
     
     return frames, meta
 
+
 def velocity(frames, meta):
     for idx, (frame, frame_meta) in enumerate(zip(frames, meta)):
         if "corners" not in frame_meta.keys():
@@ -119,22 +127,79 @@ def velocity(frames, meta):
         if "displacements" not in frame_meta.keys():
             break
         contour_disps = []
-        for contour in frame_meta["contours"]:
+        contour_idcs = []
+        for contour_idx, contour in enumerate(frame_meta["contours"]):
             contour = contour.astype(np.float32)
             x, y = contour.mean(axis=0)[0]
             contour -= np.array([x, y]).astype(np.float32)
             contour *= 1.1
             disp_sum = np.array([0, 0])
             len_disp = 0
-            for disp, corner in zip(frame_meta["displacements"], frame_meta["corners"]):
+            this_contour_idcs = []
+            for corner_idx, (disp, corner) in enumerate(zip(frame_meta["displacements"], frame_meta["corners"])):
                 corner = corner.astype(np.float32)
                 corner -= np.array([x, y]).astype(np.float32)
                 if cv2.pointPolygonTest(contour, corner, False) >= 0:
                     disp_sum[0] += disp[0]
                     disp_sum[1] += disp[1]
                     len_disp += 1
-            contour_disps.append(disp_sum / len_disp if len_disp != 0 else [0, 0])
+                    this_contour_idcs.append(corner_idx)
+            contour_idcs.append(this_contour_idcs)
+
+            contour_disps.append(disp_sum / len_disp if len_disp != 0 else np.array([0, 0]))
         meta[idx]["contour velocities"] = contour_disps
+        meta[idx]["contour corner indices"] = contour_idcs
+    return frames, meta
+
+
+def pair_contours(frames, meta):
+    for idx, (frame, frame_meta) in enumerate(zip(frames, meta)):
+        if "corners" not in frame_meta.keys():
+            break
+        if "displacements" not in frame_meta.keys():
+            break
+        if "contours" not in frame_meta.keys():
+            break
+
+        grouped_contours = []
+        for idx1, contour_1 in enumerate(frame_meta["contours"]):
+            min_diff = 1e8
+            min_idx = 0
+            for idx2, contour_2 in enumerate(frame_meta["contours"]):
+                if idx1 == idx2:
+                    continue
+                moments_1 = cv2.moments(contour_1)
+                moments_2 = cv2.moments(contour_2)
+                
+                dmu20 = abs(np.log2(abs(moments_1["mu20"]))-np.log2(abs(moments_2["mu20"])))
+                dmu11 = abs(np.log2(abs(moments_1["mu11"]))-np.log2(abs(moments_2["mu11"])))
+                dmu02 = abs(np.log2(abs(moments_1["mu02"]))-np.log2(abs(moments_2["mu02"])))
+                dmu30 = abs(np.log2(abs(moments_1["mu30"]))-np.log2(abs(moments_2["mu30"])))
+                dmu21 = abs(np.log2(abs(moments_1["mu21"]))-np.log2(abs(moments_2["mu21"])))
+                dmu12 = abs(np.log2(abs(moments_1["mu12"]))-np.log2(abs(moments_2["mu12"])))
+                dmu03 = abs(np.log2(abs(moments_1["mu03"]))-np.log2(abs(moments_2["mu03"])))
+
+                vx1 = frame_meta["contour velocities"][idx1][0]
+                vx2 = frame_meta["contour velocities"][idx2][0]
+             
+                vy1 = frame_meta["contour velocities"][idx1][1]
+                vy2 = frame_meta["contour velocities"][idx2][1]
+
+                dvx = (vx1-vx2)**2 if vx1 != 0 and vx2 != 0 else 10
+                dvy = (vy1-vy2)**2 if vy1 != 0 and vy2 != 0 else 10
+
+                # print(moments_2)
+                
+                diff = dmu20 + dmu11 + dmu02 + dmu30 + dmu21 + dmu12 + dmu03 + dvx + dvy
+                if diff < min_diff:
+                    min_diff = diff
+                    min_idx = idx2
+            pair = [idx1, min_idx, min_diff]
+            grouped_contours.append(pair)
+            # when 2 values are the same, they are a pair
+
+        meta[idx]["paired"] = grouped_contours
+        print(str(idx) + ": " + str(frame_meta["paired"]))
     return frames, meta
 
 
@@ -148,8 +213,9 @@ def draw_contours(frames, meta):
         disps = frame_meta["contour velocities"]
         for cidx, (contour, disp) in enumerate(zip(frame_meta["contours"], frame_meta["contour velocities"])):
             if disp[0] == 0 and disp[1] == 0:
+                cv2.drawContours(frame, frame_meta["contours"], cidx, (255, 255, 0), 2)
                 continue
-            cv2.drawContours(frame, frame_meta["contours"], cidx, (disp[0]/300*127 + 127, disp[1]/300*127 + 127, 0), -1)
+            cv2.drawContours(frame, frame_meta["contours"], cidx, (disp[0]/100*127 + 127, disp[1]/100*127 + 127, 0), -1)
         frames[idx] = frame
     return frames, meta
 
@@ -242,6 +308,8 @@ def show(frames, meta):
 
 # print metadata
 def print_meta(frames, meta):
+    if meta[0]["frame number"] == 0:
+        return frames, meta
     print(meta)
     return frames, meta
 
@@ -265,6 +333,7 @@ if __name__ == "__main__":
             optical_flow,
             contour,
             velocity,
+            pair_contours,
             color, 
             draw_contours,
             draw_features,

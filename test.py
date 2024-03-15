@@ -39,7 +39,7 @@ def sharpen(frames, meta):
 # identify features to track
 def features(frames, meta):
     feature_config = {
-        "maxCorners": 30, 
+        "maxCorners": 100, 
         "qualityLevel": 0.1, 
         "minDistance": 15
     }
@@ -171,13 +171,7 @@ def pair_contours(frames, meta):
                 moments_1 = cv2.moments(contour_1)
                 moments_2 = cv2.moments(contour_2)
                 
-                dmu20 = abs(np.log2(abs(moments_1["mu20"]))-np.log2(abs(moments_2["mu20"])))
-                dmu11 = abs(np.log2(abs(moments_1["mu11"]))-np.log2(abs(moments_2["mu11"])))
-                dmu02 = abs(np.log2(abs(moments_1["mu02"]))-np.log2(abs(moments_2["mu02"])))
-                dmu30 = abs(np.log2(abs(moments_1["mu30"]))-np.log2(abs(moments_2["mu30"])))
-                dmu21 = abs(np.log2(abs(moments_1["mu21"]))-np.log2(abs(moments_2["mu21"])))
-                dmu12 = abs(np.log2(abs(moments_1["mu12"]))-np.log2(abs(moments_2["mu12"])))
-                dmu03 = abs(np.log2(abs(moments_1["mu03"]))-np.log2(abs(moments_2["mu03"])))
+                d = lambda key: abs(np.log2(abs(moments_1[key]))-np.log2(abs(moments_2[key])))
 
                 vx1 = frame_meta["contour velocities"][idx1][0]
                 vx2 = frame_meta["contour velocities"][idx2][0]
@@ -190,7 +184,7 @@ def pair_contours(frames, meta):
 
                 # print(moments_2)
                 
-                diff = dmu20 + dmu11 + dmu02 + dmu30 + dmu21 + dmu12 + dmu03 + dvx + dvy
+                diff = d("mu20") + d("mu11") + d("mu02") + d("mu30") + d("mu21") + d("mu12") + d("mu03") + dvx + dvy
                 if diff < min_diff:
                     min_diff = diff
                     min_idx = idx2
@@ -199,14 +193,29 @@ def pair_contours(frames, meta):
             # when 2 values are the same, they are a pair
 
         meta[idx]["paired"] = grouped_contours
-        print(str(idx) + ": " + str(frame_meta["paired"]))
+        reciprocated_pairs = []
+        for pair in frame_meta["paired"]:
+            reciprocal = [pair[1], pair[0], pair[2]]
+            if reciprocal in meta[idx]["paired"] and reciprocal not in reciprocated_pairs:
+                reciprocated_pairs.append(reciprocal)
+        meta[idx]["reciprocated pairs"] = reciprocated_pairs
     return frames, meta
 
+# combine pairs
+def combine_pairs(frames, meta):
+    for idx, (frame, frame_meta) in enumerate(zip(frames, meta)):
+        if "reciprocated pairs" not in frame_meta.keys():
+            return frames, meta
+        for pair in frame_meta["reciprocated pairs"]:
+            c1 = frame_meta["contours"][pair[0]]
+            com1 = sum(c1) / len(c1)
+            print(com1)
+            c2 = frame_meta["contours"][pair[1]]
+    return frames, meta
 
 # draw contours
 def draw_contours(frames, meta):
     for idx, (frame, frame_meta) in enumerate(zip(frames, meta)):
-        # frame = frame_meta["original"]
         if "contour velocities" not in frame_meta.keys():
             continue
         shape = frame.shape
@@ -334,6 +343,7 @@ if __name__ == "__main__":
             contour,
             velocity,
             pair_contours,
+            combine_pairs,
             color, 
             draw_contours,
             draw_features,
@@ -344,4 +354,4 @@ if __name__ == "__main__":
     ]
     # processing_order.append(print_meta)
     # processing_order.append(print_frames)
-    every_frame(["videos/seq 34 vid 2.mp4", "videos/seq 34 vid 1.mp4"], processing_order)
+    every_frame(["videos/seq 34 vid 1.mp4"], processing_order)

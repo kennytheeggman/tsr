@@ -4,6 +4,7 @@ test1.mp4
 # Vim files
 *.*~
 *.swp
+*.swo
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

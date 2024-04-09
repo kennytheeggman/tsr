@@ -592,5 +592,5 @@ if __name__ == "__main__":
     # processing_order.append(print_meta)
     # processing_order.append(print_frames)
     args = lambda i: [[f"videos/phone{str(j)}/{str(i+1)}.mp4" for j in (1,2,4)], offsets[i]]
-    every_frame(*args(4), processing_order, duration=250)
+    every_frame(*args(11), processing_order, duration=250)
 

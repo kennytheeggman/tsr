@@ -1,13 +1,16 @@
-from video_read import every_frame
+from video_read import every_frame, show_sequential
 import cv2
 import numpy as np
 from copy import deepcopy as dc
 from optical_flow import optical_flow_1
+from superresolution import superres
+import time
 
 
 #################################### Image Processing Pipeline ####################################  
 
 def crop(frames, meta):
+    meta[0]["start time"] = time.time()
     height, width, depth = frames[0].shape
     h_offsets = [40, 75]#[0, 23]
     v_offsets = [30, 10]
@@ -370,16 +373,25 @@ def match_contours(frames, meta):
         new_matched.append(context_matched)
 
     meta[0]["matches"] = new_matched
-    print([[i["com"] for i in j] for j in new_matched])
+    # print([[i["com"] for i in j] for j in new_matched])
         
     return frames, meta
 
 def superresolution(frames, meta):
-    if "matches" not in meta[0].keys() or len(meta[0]["matches"]) == 0:
-        return frames, meta
+    if "matches" not in meta[0].keys():
+        return frames, meta 
+
+    # len(meta[0]["matches"]) == 0
+
+    if "super frames" in meta[0].keys():
+        meta[0]["super frames"] = []
     
     matches = meta[0]["matches"]
-    extracted_matches = []
+    supered_matches = []
+    super_backgrounds = superres([cv2.cvtColor(meta[i]["original"], cv2.COLOR_RGB2RGBA) for i in range(3)])
+    # super_backgrounds = [np.zeros(meta[0]["original"].shape[:2] + (4,)) for i in range(3)]
+    super_backgrounds.reverse()
+    # print(super_backgrounds)
     for mat in matches:
         master = sorted(mat, key=lambda e: e["area"])
         shape = master[-1]["contour"]
@@ -397,11 +409,12 @@ def superresolution(frames, meta):
         #print(contours)
         extract_translated = []
         for idx, m in enumerate(imageidcs):
-            mask = np.zeros_like(meta[m]["original"])
+            #mask = np.zeros_like(meta[m]["original"])
+            mask = np.zeros(meta[m]["original"].shape[:2])
             contours[idx] = np.array(contours[idx]).reshape((-1,1,2)).astype(np.int32)
             cv2.drawContours(mask, contours, idx, 255, -1)
-            out = np.zeros_like(meta[m]["original"])
-            out[mask==255] = meta[m]["original"][mask==255]
+            out = np.zeros(meta[m]["original"].shape[:2] + (4,))
+            out[mask==255] = cv2.cvtColor(meta[m]["original"], cv2.COLOR_RGB2RGBA)[mask==255]
             t = [0, 0] if idx == 0 else translate1[0] if idx == 1 else translate2[0]
             translation = np.float32([
                 [1, 0, t[0]],
@@ -409,7 +422,28 @@ def superresolution(frames, meta):
             ])
             out = cv2.warpAffine(out, translation, (out.shape[1], out.shape[0]))
             extract_translated.append(out)
-        extracted_matches.append(extract_translated)
+        result = superres(extract_translated)
+        if result != None:
+            result.reverse()
+            supered_matches.append(tuple([result, translation, master[-1]["velocity"]]))
+        #  extracted_matches.append(extract_translated)
+    def helper(ndarr):
+        return ndarr[:, :, -1]
+    for supered in supered_matches:
+        sup, trans, vel = supered
+        for idx, s in enumerate(sup):
+            new_trans = np.float32([
+                [1, 0, vel[0] * idx * 5],
+                [0, 1, vel[1] * idx * 5]
+            ])
+            new_sup = cv2.warpAffine(s, new_trans, (s.shape[1], s.shape[0]))
+            alphas = dc(new_sup)[:, :, 3]
+            new_sup[alphas!=0][3] = 255
+            # print(alphas)
+            super_backgrounds[idx][alphas!=0] = new_sup[alphas!=0]
+            # print(new_sup)
+    # print(len(super_backgrounds))
+    meta[0]["super frames"] = [cv2.cvtColor(super_back.astype(np.uint8), cv2.COLOR_RGBA2RGB) for super_back in super_backgrounds]
 
     return frames, meta
 
@@ -504,6 +538,51 @@ def copy_frame(frames, meta):
 
     return frames, meta
 
+def get_data(frames, meta):
+
+    #if meta[0]["frame number"] == 0:
+    #    path = "videos/phone3/2.mp4"
+    #    offset = 250
+    #    meta[0]["ground truth"] = cv2.VideoCapture(path)
+
+    res, fr1 = meta[0]["ground truth"].read()
+    res, fr2 = meta[0]["ground truth"].read()
+
+    fr1 = cv2.resize(fr1, None, fx=.5, fy=.5)[:945, :502]
+    fr2 = cv2.resize(fr2, None, fx=.5, fy=.5)[:945, :502]
+
+    if "super frames" not in meta[0].keys() or "original" not in meta[0].keys():
+        return frames, meta
+
+    starttime = time.time()
+    shechtman = superres([meta[i]["original"] for i in range(3)])
+    shechtman.reverse()
+    shechtman = [cv2.resize(sh.astype(np.uint8), None, fx=.5, fy=.5) for sh in shechtman]
+    meta[0]["shechtman"] = shechtman
+    endtime = time.time()
+    meta[0]["super time"] = endtime-starttime
+
+    shechtman_frame1 = shechtman[0] + shechtman[1] / 2
+    shechtman_frame2 = shechtman[1] / 2 + shechtman[2]
+
+    supers = [cv2.resize(sf, None, fx=.5, fy=.5) for sf in meta[0]["super frames"]]
+    meta[0]["supers"] = supers
+
+    supers_frame1 = supers[0] + supers[1] / 2
+    supers_frame2 = supers[1] / 2 + supers[2]
+
+    shechtman_diff1 = sum(sum(sum((shechtman_frame1 - fr1)**2)))
+    shechtman_diff2 = sum(sum(sum((shechtman_frame2 - fr2)**2)))
+
+    supers_diff1 = sum(sum(sum((supers_frame1 - fr1)**2)))
+    supers_diff2 = sum(sum(sum((supers_frame2 - fr2)**2)))
+
+    
+    meta[0]["shechtman error"] = [shechtman_diff1, shechtman_diff2]
+    meta[0]["supers error"] = [supers_diff1, supers_diff2]
+
+    return frames, meta
+
 # show frames
 def show(frames, meta):
     for idx, frame in enumerate(frames):
@@ -513,14 +592,40 @@ def show(frames, meta):
         resized2 = cv2.resize(meta[idx]["copy"][0], None, fx=0.25, fy=0.25)
         cv2.imshow(str(idx) + "org", resized2)
 
-    overlay = (frames[0].astype(int) + frames[1].astype(int) + frames[2].astype(int)) // 3
+    if "super frames" not in meta[0].keys():
+        return frames, meta
+    if "original" not in meta[0].keys():
+        return frames, meta
+
+    show_sequential([meta[0]["shechtman"], meta[0]["supers"]], ["shechtman", "supers"])
+
+    # overlay = (frames[0].astype(int) + frames[1].astype(int) + frames[2].astype(int)) // 3
     # overlay = (meta[0]["copy"][0].astype(int) + meta[1]["copy"][0].astype(int) + meta[2]["copy"][0].astype(int)) // 3
-    overlay = overlay.astype(np.uint8)
-    overlay = cv2.resize(overlay, None, fx=0.5, fy=0.5)
-    cv2.imshow("overlay", overlay)
+    # overlay = overlay.astype(np.uint8)
+    # overlay = cv2.resize(overlay, None, fx=0.5, fy=0.5)
+    # cv2.imshow("overlay", overlay)
     
     return frames, meta
 
+def write(frames, meta):
+    if "shechtman error" not in meta[0].keys():
+        return frames, meta
+    with open("shechtmans.csv", "a") as f:
+        f.write(str(meta[0]["shechtman error"][0]) + "," + str(meta[0]["shechtman error"][1]) + ",")
+    f.close()
+    with open("shechtmant.csv", "a") as f:
+        f.write(str(meta[0]["super time"]) + ",")
+    f.close()
+    with open("supers.csv", "a") as f:
+        f.write(str(meta[0]["supers error"][0]) + "," + str(meta[0]["supers error"][1]) + ",")
+    f.close()
+    with open("supert.csv", "a") as f:
+        f.write(str(time.time()-meta[0]["start time"]) + ",")
+    f.close()
+    with open("results.csv", "a") as f:
+        f.write(str(meta[0]["shechtman error"][0]-meta[0]["supers error"][0]) + "," + str(meta[0]["shechtman error"][1]-meta[0]["supers error"][1]) + ",")
+    f.close()
+    return frames, meta
 
 #################################### Metadata Processing Pipeline ####################################  
 
@@ -540,6 +645,39 @@ def print_frames(frames, meta):
 
 #################################### Main Execution Loop ####################################  
 
+
+offsets = [
+        [187, 278, 396],
+        [189, 282, 327],
+        [260, 353, 381],
+        [142, 218, 236],
+        [102, 184, 203],
+        [142, 229, 273],
+        [125, 201, 226],
+        [81, 148, 172],
+        [57, 114, 128],
+        [142, 82, 146],
+        [121, 185, 205],
+        [135, 192, 227],
+        [56, 113, 156],
+        [31, 91, 121],
+        [173, 230, 258],
+        [114, 191, 214],
+        [158, 215, 247],
+        [42, 97, 118],
+        [109, 196, 224],
+        [34, 90, 104],
+        [40, 110, 134],
+        [292, 357, 378],
+]
+current_vid = 0
+def state(frames, meta):
+    if meta[0]["frame number"] == 0:
+        off = (offsets[current_vid][0] + offsets[current_vid][1]) // 2
+        file = f"videos/phone3/{current_vid+1}.mp4"
+        meta[0]["ground truth"] = cv2.VideoCapture(file)
+        meta[0]["ground truth"].set(cv2.CAP_PROP_POS_FRAMES, off)
+    return frames, meta
 
 if __name__ == "__main__":
     processing_order = [
@@ -561,36 +699,35 @@ if __name__ == "__main__":
             draw_contours,
             draw_features,
             # draw_kmeans,
-            draw_of, 
-            show, 
+            draw_of,
+            state,
+            get_data,
+            # show, 
+            write,
             store_copy
-    ]
-    offsets = [
-            [187, 278, 396],
-            [189, 282, 327],
-            [260, 353, 381],
-            [142, 218, 236],
-            [102, 184, 203],
-            [142, 229, 273],
-            [125, 201, 226],
-            [81, 148, 172],
-            [57, 114, 128],
-            [142, 82, 146],
-            [121, 185, 205],
-            [135, 192, 227],
-            [56, 113, 156],
-            [31, 91, 121],
-            [173, 230, 258],
-            [114, 191, 214],
-            [158, 215, 247],
-            [42, 97, 118],
-            [109, 196, 224],
-            [34, 90, 104],
-            [40, 110, 134],
-            [292, 357, 378],
     ]
     # processing_order.append(print_meta)
     # processing_order.append(print_frames)
-    args = lambda i: [[f"videos/phone{str(j)}/{str(i+1)}.mp4" for j in (1,2,4)], offsets[i]]
-    every_frame(*args(11), processing_order, duration=250)
+    for idx in range(22):
+        args = lambda i: [[f"videos/phone{str(j)}/{str(i+1)}.mp4" for j in (1,2,4)], offsets[i]]
+        current_vid = idx
+        start_time = time.time()
+        every_frame(*args(idx), processing_order, debug=True)
+        with open("results.csv", "a") as f:
+            f.write("\n")
+        f.close()
+        with open("supers.csv", "a") as f:
+            f.write("\n")
+        f.close()
+        with open("shechtmans.csv", "a") as f:
+            f.write("\n")
+        f.close()
+        with open("supert.csv", "a") as f:
+            f.write("\n")
+        f.close()
+        with open("shechtmant.csv", "a") as f:
+            f.write("\n")
+        f.close()
+        end_time = time.time()
+        total_time = end_time-start_time
 
